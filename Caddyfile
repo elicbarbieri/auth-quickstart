@@ -1,7 +1,7 @@
 {
     # Global options
     admin off  # Disable admin API for security
-    auto_https disable_redirects  # Let Authelia handle redirects
+    auto_https disable_redirects  # Handle redirects in security middleware
     servers {
         strict_sni_host  # Enforce SNI check for improved security
     }
@@ -20,12 +20,21 @@
         X-Frame-Options "SAMEORIGIN"
         Referrer-Policy "strict-origin-when-cross-origin"
         X-XSS-Protection "1; mode=block"
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-ancestors 'self';"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-ancestors 'self'; form-action 'self';"
         Permissions-Policy "geolocation=(), camera=(), microphone=(), interest-cohort=()"
 
         # Remove Server header
         -Server
     }
+}
+
+# Define the authorization policy
+(mypolicy) {
+    crypto key verify {env.CADDY_JWT_SECRET}
+    allow roles authp/user
+    validate bearer header
+    token lifetime 3600
+    inject headers with claims
 }
 
 # Authentication portal
@@ -117,16 +126,6 @@ users.{env.BASE_DOMAIN} {
         output file /var/log/caddy/users-access.log
         format json
     }
-}
-
-# Authorization policy
-(mypolicy) {
-    crypto key verify {env.CADDY_JWT_SECRET}
-    allow roles authp/user
-    validate bearer header
-    validate ip
-    token lifetime 3600
-    inject headers with claims
 }
 
 # Example protected service
