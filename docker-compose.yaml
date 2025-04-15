@@ -1,6 +1,6 @@
 services:
   lldap:
-    image: lldap/lldap:stable-rootless  # Using rootless version for better security
+    image: lldap/lldap:stable
     container_name: lldap
     volumes:
       - lldap_data:/data
@@ -18,8 +18,6 @@ services:
       retries: 3
       start_period: 5s
     restart: unless-stopped
-    # Using user/group ID for rootless container (typically 1000:1000)
-    user: "1000:1000"
 
   lldap-init:
     image: curlimages/curl:latest
