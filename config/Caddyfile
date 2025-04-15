@@ -1,0 +1,67 @@
+{
+    # Global options
+    admin off  # Disable admin API for security
+    auto_https disable_redirects  # Let Authelia handle redirects
+    servers {
+        protocol {
+            strict_sni_host  # Enforce SNI check for improved security
+        }
+    }
+
+    # Use environment variables
+    env BASE_DOMAIN
+}
+
+# Global security headers
+(security_headers) {
+    header {
+        # Security headers
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        X-XSS-Protection "1; mode=block"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self';"
+        Permissions-Policy "geolocation=(), camera=(), microphone=(), interest-cohort=()"
+
+        # Remove Server header
+        -Server
+    }
+}
+
+# Authentication portal
+auth.{$BASE_DOMAIN} {
+    import security_headers
+    tls /certs/cert.pem /certs/key.pem {
+        protocols tls1.3 tls1.2  # Only use secure TLS versions
+    }
+    reverse_proxy authelia:9091
+}
+
+# LLDAP admin interface
+users.{$BASE_DOMAIN} {
+    import security_headers
+    tls /certs/cert.pem /certs/key.pem {
+        protocols tls1.3 tls1.2
+    }
+    # Use forward_auth for authentication
+    forward_auth authelia:9091 {
+        uri /api/verify?rd=https://auth.{$BASE_DOMAIN}
+        copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+    }
+    reverse_proxy lldap:17170
+}
+
+# Example protected service
+# Uncomment and modify as needed for your applications
+# service.{$BASE_DOMAIN} {
+#     import security_headers
+#     tls /certs/cert.pem /certs/key.pem {
+#         protocols tls1.3 tls1.2
+#     }
+#     forward_auth authelia:9091 {
+#         uri /api/verify?rd=https://auth.{$BASE_DOMAIN}
+#         copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+#     }
+#     reverse_proxy host.docker.internal:3000
+# }

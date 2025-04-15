@@ -1,0 +1,105 @@
+services:
+  lldap:
+    image: lldap/lldap:stable-rootless  # Using rootless version for better security
+    container_name: lldap
+    volumes:
+      - lldap_data:/data
+    environment:
+      - TZ=UTC
+      - LLDAP_JWT_SECRET=${LLDAP_JWT_SECRET}
+      - LLDAP_ADMIN_PASSWORD=${LLDAP_ADMIN_PASSWORD}
+      - LLDAP_LDAP_BASE_DN=${LLDAP_BASE_DN}
+    networks:
+      - auth_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:17170/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    # Using user/group ID for rootless container (typically 1000:1000)
+    user: "1000:1000"
+
+  lldap-init:
+    image: curlimages/curl:latest
+    depends_on:
+      lldap:
+        condition: service_healthy
+    environment:
+      - LLDAP_ADMIN_PASSWORD=${LLDAP_ADMIN_PASSWORD}
+      - LLDAP_AUTH_PASSWORD=${LLDAP_AUTH_PASSWORD}
+      - BASE_DOMAIN=${BASE_DOMAIN}
+    volumes:
+      - ./lldap-init.sh:/scripts/lldap-init.sh
+    entrypoint: ["/bin/sh", "/scripts/lldap-init.sh"]
+    networks:
+      - auth_network
+
+  authelia:
+    image: authelia/authelia:4.39
+    container_name: authelia
+    volumes:
+      - ./authelia:/config
+    environment:
+      - TZ=UTC
+      - AUTHELIA_JWT_SECRET=${AUTHELIA_JWT_SECRET}
+      - AUTHELIA_SESSION_SECRET=${AUTHELIA_SESSION_SECRET}
+      - AUTHELIA_STORAGE_ENCRYPTION_KEY=${AUTHELIA_STORAGE_ENCRYPTION_KEY}
+      - AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD=${LLDAP_AUTH_PASSWORD}
+      - AUTHELIA_NOTIFIER_SMTP_PASSWORD=${SMTP_PASSWORD}
+      - AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET=${AUTHELIA_OIDC_HMAC_SECRET}
+      - LLDAP_BASE_DN=${LLDAP_BASE_DN}
+    networks:
+      - auth_network
+    restart: unless-stopped
+    depends_on:
+      - lldap-init
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  caddy:
+    image: caddy:2.7
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - BASE_DOMAIN=${BASE_DOMAIN}
+    networks:
+      - auth_network
+      - app_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    depends_on:
+      - authelia
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - DAC_OVERRIDE
+
+networks:
+  auth_network:
+    driver: bridge
+    internal: true  # This network is not accessible from outside
+  app_network:
+    driver: bridge   # Allows accessing the docker host from the container
+
+volumes:
+  lldap_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local

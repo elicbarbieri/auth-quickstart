@@ -1,0 +1,6 @@
+.env
+certs
+
+# IDE Files
+.idea
+.vscode
