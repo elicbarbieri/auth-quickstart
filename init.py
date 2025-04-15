@@ -7,6 +7,7 @@ import string
 
 # Configuration from environment
 AUTHENTIK_URL = os.environ.get('AUTHENTIK_URL')
+AUTHENTIK_ADMIN_USER = os.environ.get('AUTHENTIK_ADMIN_USER')
 AUTHENTIK_BOOTSTRAP_TOKEN = os.environ.get('AUTHENTIK_BOOTSTRAP_TOKEN')
 BASE_DOMAIN = os.environ.get('BASE_DOMAIN')
 CADDY_CONFIG_PATH = os.environ.get('CADDY_CONFIG_PATH')
@@ -53,7 +54,29 @@ def get_api_token():
 def create_proxy_provider(token):
     provider_url = f"{AUTHENTIK_URL}/api/v3/providers/proxy/"
 
-    # First create an application
+    # First we need to get a valid group to use
+    groups_url = f"{AUTHENTIK_URL}/api/v3/core/groups/"
+    print("Fetching available groups...")
+
+    groups_response = requests.get(
+        groups_url,
+        headers={"Authorization": f"Bearer {token}"}
+    )
+
+    if groups_response.status_code != 200:
+        print(f"Failed to fetch groups: {groups_response.text}")
+        return None
+
+    groups_data = groups_response.json()
+    if not groups_data.get('results') or len(groups_data['results']) == 0:
+        print("No groups found in Authentik")
+        return None
+
+    # Use the first available group (typically "authentik Admins")
+    default_group = groups_data['results'][0]['pk']
+    print(f"Using group: {groups_data['results'][0]['name']} (ID: {default_group})")
+
+    # Create an application
     app_url = f"{AUTHENTIK_URL}/api/v3/core/applications/"
     app_payload = {
         "name": "Caddy Forward Auth",
@@ -61,7 +84,7 @@ def create_proxy_provider(token):
         "provider": None,
         "meta_launch_url": "",
         "policy_engine_mode": "all",
-        "group": None
+        "group": default_group
     }
 
     print("Creating application...")
