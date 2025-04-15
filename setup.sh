@@ -17,10 +17,10 @@ if [ -z "$AUTHENTIK_ADMIN_USER" ]; then
 fi
 
 # Prompt for Authentik Admin Password
-read -p "Enter Authentik Admin Password (leave blank for auto-generated): " AUTHENTIK_ADMIN_PASSWORD
-if [ -z "$AUTHENTIK_ADMIN_PASSWORD" ]; then
+read -p "Enter Authentik Admin Password (leave blank for auto-generated): " AUTHENTIK_BOOTSTRAP_PASSWORD
+if [ -z "$AUTHENTIK_BOOTSTRAP_PASSWORD" ]; then
     # Generate readable hex password
-    AUTHENTIK_ADMIN_PASSWORD=$(openssl rand -hex 12)
+    AUTHENTIK_BOOTSTRAP_PASSWORD=$(openssl rand -hex 12)
 fi
 
 # Generate secrets
@@ -45,10 +45,7 @@ PG_DB=authentik
 
 # Authentik Configuration
 AUTHENTIK_SECRET_KEY=$AUTHENTIK_SECRET_KEY
-AUTHENTIK_ADMIN_USER=$AUTHENTIK_ADMIN_USER
-AUTHENTIK_ADMIN_EMAIL=admin@example.com
-AUTHENTIK_ADMIN_PASSWORD=$AUTHENTIK_ADMIN_PASSWORD
-
+AUTHENTIK_BOOTSTRAP_PASSWORD=$AUTHENTIK_BOOTSTRAP_PASSWORD
 AUTHENTIK_BOOTSTRAP_TOKEN=$AUTHENTIK_BOOTSTRAP_TOKEN
 
 # Caddy Configuration

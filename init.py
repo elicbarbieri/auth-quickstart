@@ -1,20 +1,17 @@
 import requests
 import os
 import time
-import json
 import secrets
 import string
 import sys
 
 # Configuration from environment
 AUTHENTIK_URL = os.environ.get('AUTHENTIK_URL')
-AUTHENTIK_ADMIN_USER = os.environ.get('AUTHENTIK_ADMIN_USER')
 AUTHENTIK_BOOTSTRAP_TOKEN = os.environ.get('AUTHENTIK_BOOTSTRAP_TOKEN')
 BASE_DOMAIN = os.environ.get('BASE_DOMAIN')
-CADDY_CONFIG_PATH = os.environ.get('CADDY_CONFIG_PATH')
 
-if not all([AUTHENTIK_URL, BASE_DOMAIN, CADDY_CONFIG_PATH]):
-    print("Error: AUTHENTIK_URL, BASE_DOMAIN, and CADDY_CONFIG_PATH environment variables must be set.")
+if not all([AUTHENTIK_URL, BASE_DOMAIN, AUTHENTIK_BOOTSTRAP_TOKEN]):
+    print("Error: AUTHENTIK_URL, BASE_DOMAIN, and AUTHENTIK_BOOTSTRAP_TOKEN environment variables must be set.")
     sys.exit(1)
 
 # Generate a secure random string
@@ -179,25 +176,6 @@ def create_proxy_provider(token):
 
     return None # Should not reach here if provider creation was successful or existed
 
-# Save configuration for Caddy
-def save_caddy_config(provider_config):
-    os.makedirs(CADDY_CONFIG_PATH, exist_ok=True)
-
-    config_file = os.path.join(CADDY_CONFIG_PATH, "auth_config.json")
-    config = {
-        "provider_id": provider_config["provider_id"],
-        "application_id": provider_config["application_id"],
-        "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-    }
-
-    try:
-        with open(config_file, 'w') as f:
-            json.dump(config, f, indent=2)
-        print(f"Saved configuration to {config_file}")
-    except IOError as e:
-        print(f"Error saving Caddy configuration: {e}")
-        sys.exit(1)
-
 
 # Main function
 def main():
@@ -226,9 +204,6 @@ def main():
             sys.exit(1)
 
         print(f"Provider configuration successful (Provider ID: {provider_config['provider_id']}, Application ID: {provider_config['application_id']})")
-
-        # Save configuration
-        save_caddy_config(provider_config)
 
         print("Initialization completed successfully")
         sys.exit(0)
