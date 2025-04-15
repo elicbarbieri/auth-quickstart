@@ -17,36 +17,35 @@ if [ -z "$LLDAP_ADMIN_PASSWORD" ]; then
   LLDAP_ADMIN_PASSWORD=$(LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*()-_=+[]{}|;:,.<>?' < /dev/urandom | head -c 24)
 fi
 
-# Create required directories
-mkdir -p authelia/config/secrets
-mkdir -p config
-mkdir -p certs
 
 # Create .env file with generated secrets
-echo "BASE_DOMAIN=$BASE_DOMAIN" > .env
+# Start with a clean .env file
+cat > .env << EOF
+# LLDAP Configuration ----------------------------------
+LLDAP_ADMIN_PASSWORD="$LLDAP_ADMIN_PASSWORD"
+LLDAP_JWT_SECRET="$(openssl rand -hex 32)"
+LLDAP_BASE_DN="$(echo $BASE_DOMAIN | sed 's/\./,dc=/g' | sed 's/^/dc=/')"
+LLDAP_AUTH_PASSWORD="$(LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*()-_=+[]{}|;:,.<>?' < /dev/urandom | head -c 24)"
 
-# LLDAP Configuration
-echo "LLDAP_ADMIN_PASSWORD=$LLDAP_ADMIN_PASSWORD" >> .env
-echo "LLDAP_JWT_SECRET=$(openssl rand -hex 32)" >> .env
-echo "LLDAP_BASE_DN=$(echo $BASE_DOMAIN | sed 's/\./,dc=/g' | sed 's/^/dc=/')" >> .env
-echo "LLDAP_AUTH_PASSWORD=$(LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*()-_=+[]{}|;:,.<>?' < /dev/urandom | head -c 24)" >> .env
+# Authelia Configuration ----------------------------------
+AUTHELIA_JWT_SECRET="$(openssl rand -hex 32)"
+AUTHELIA_SESSION_SECRET="$(openssl rand -hex 32)"
+AUTHELIA_STORAGE_ENCRYPTION_KEY="$(openssl rand -hex 32)"
+AUTHELIA_OIDC_HMAC_SECRET="$(openssl rand -hex 32)"
+OIDC_CLIENT_SECRET="$(LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*()-_=+[]{}|;:,.<>?' < /dev/urandom | head -c 24)"
+SMTP_PASSWORD="disabled"
 
-# Authelia Configuration
-echo "AUTHELIA_JWT_SECRET=$(openssl rand -hex 32)" >> .env
-echo "AUTHELIA_SESSION_SECRET=$(openssl rand -hex 32)" >> .env
-echo "AUTHELIA_STORAGE_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env
-echo "AUTHELIA_OIDC_HMAC_SECRET=$(openssl rand -hex 32)" >> .env
-echo "OIDC_CLIENT_SECRET=$(LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*()-_=+[]{}|;:,.<>?' < /dev/urandom | head -c 24)" >> .env
+# General Configuration ----------------------------------
+BASE_DOMAIN="$BASE_DOMAIN"
+EOF
 
-# Set default SMTP password to disabled for initial setup
-echo "SMTP_PASSWORD=disabled" >> .env
 
 # Generate OIDC private key
-openssl genrsa -out authelia/config/secrets/oidc_private_key.pem 4096
-chmod 600 authelia/config/secrets/oidc_private_key.pem
+openssl genrsa -out authelia/secrets/oidc_private_key.pem 4096
+chmod 600 authelia/secrets/oidc_private_key.pem
 
 # Set correct permissions for directories
-chmod 750 authelia/config/secrets
+chmod 750 authelia/secrets
 chmod 750 certs
 
 echo "Setup completed successfully!"

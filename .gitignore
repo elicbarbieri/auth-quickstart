@@ -1,5 +1,6 @@
 .env
 certs
+authelia/secrets
 
 # IDE Files
 .idea
