@@ -1,7 +1,7 @@
 {
     # Global options
     admin off  # Disable admin API for security
-    auto_https disable_redirects  # Let Authelia handle redirects
+    auto_https disable_redirects  # Handle redirects in security middleware
     servers {
         protocol {
             strict_sni_host  # Enforce SNI check for improved security
@@ -18,7 +18,7 @@
         X-Frame-Options "SAMEORIGIN"
         Referrer-Policy "strict-origin-when-cross-origin"
         X-XSS-Protection "1; mode=block"
-        Content-Security-Policy "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self';"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'self';"
         Permissions-Policy "geolocation=(), camera=(), microphone=(), interest-cohort=()"
 
         # Remove Server header
@@ -26,39 +26,124 @@
     }
 }
 
+# Authentication configuration
+(auth_config) {
+    security {
+        authentication portal {
+            crypto default token lifetime 3600
+            crypto key sign-verify {env.CADDY_JWT_SECRET}
+
+            enable identity store local
+
+            # LDAP authentication with LLDAP
+            identity store ldap {
+                realm local
+                host lldap:389
+                insecure_skip_verify
+                bind_dn uid={env.CADDY_LDAP_BIND_USERNAME},ou=people,{env.LLDAP_BASE_DN}
+                bind_password {env.CADDY_LDAP_BIND_PASSWORD}
+
+                search_base_dn {env.LLDAP_BASE_DN}
+                search_filter "(&(uid=%s)(objectClass=person))"
+
+                attributes {
+                    name displayName
+                    surname sn
+                    username uid
+                    member_of memberOf
+                    email mail
+                    primary_group primaryGroup
+                }
+            }
+
+            user session {
+                cookie domain {env.BASE_DOMAIN}
+                idle_timeout 1800
+                lifetime 3600
+                remember_me 172800
+                same_site strict
+            }
+
+            # Login and registration UI settings
+            ui {
+                theme auto
+                logo url /assets/images/logo.svg
+
+                theme dark {
+                    primary_color "#4f46e5"
+                    background_color "#1f2937"
+                    text_color "#f9fafb"
+                }
+
+                registration off
+                password_recovery off # Enable if you configure email
+            }
+        }
+
+        # Configure login and session verification
+        authentication portal myportal {
+            enable identity store local
+            enable identity store ldap
+            transform user {
+                match origin local ldap
+                action add role authp/user
+            }
+        }
+
+        # Configure authorization
+        authorization policy mypolicy {
+            set auth url /auth
+            crypto key verify {env.CADDY_JWT_SECRET}
+            allow roles authp/user
+            validate bearer header
+            inject headers with claims
+        }
+    }
+}
+
 # Authentication portal
 auth.{env.BASE_DOMAIN} {
     import security_headers
+    import auth_config
+
     tls /certs/cert.pem /certs/key.pem {
         protocols tls1.3 tls1.2  # Only use secure TLS versions
     }
-    reverse_proxy authelia:9091
+
+    # Handle auth portal routes
+    route {
+        authenticate with myportal
+    }
 }
 
 # LLDAP admin interface
 users.{env.BASE_DOMAIN} {
     import security_headers
+    import auth_config
+
     tls /certs/cert.pem /certs/key.pem {
         protocols tls1.3 tls1.2
     }
-    # Use forward_auth for authentication
-    forward_auth authelia:9091 {
-        uri /api/verify?rd=https://auth.{env.BASE_DOMAIN}
-        copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+
+    # Protected by authentication
+    route {
+        authorize with mypolicy
+        reverse_proxy lldap:17170
     }
-    reverse_proxy lldap:17170
 }
 
 # Example protected service
 # Uncomment and modify as needed for your applications
 # service.{env.BASE_DOMAIN} {
 #     import security_headers
+#     import auth_config
+#
 #     tls /certs/cert.pem /certs/key.pem {
 #         protocols tls1.3 tls1.2
 #     }
-#     forward_auth authelia:9091 {
-#         uri /api/verify?rd=https://auth.{env.BASE_DOMAIN}
-#         copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+#
+#     route {
+#         authorize with mypolicy
+#         reverse_proxy host.docker.internal:3000
 #     }
-#     reverse_proxy host.docker.internal:3000
 # }

@@ -1,6 +1,6 @@
 .env
 certs
-authelia/secrets
+caddy/auth
 
 # IDE Files
 .idea

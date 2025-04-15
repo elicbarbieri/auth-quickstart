@@ -38,34 +38,15 @@ services:
     networks:
       - auth_network
 
-  authelia:
-    image: authelia/authelia:4.39
-    container_name: authelia
-    volumes:
-      - ./authelia:/config
-    environment:
-      - TZ=UTC
-      - AUTHELIA_JWT_SECRET=${AUTHELIA_JWT_SECRET}
-      - AUTHELIA_SESSION_SECRET=${AUTHELIA_SESSION_SECRET}
-      - AUTHELIA_STORAGE_ENCRYPTION_KEY=${AUTHELIA_STORAGE_ENCRYPTION_KEY}
-      - AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD=${LLDAP_AUTH_PASSWORD}
-      - AUTHELIA_NOTIFIER_SMTP_PASSWORD=${SMTP_PASSWORD}
-      - AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET=${AUTHELIA_OIDC_HMAC_SECRET}
-      - LLDAP_BASE_DN=${LLDAP_BASE_DN}
-    networks:
-      - auth_network
-    restart: unless-stopped
-    depends_on:
-      - lldap-init
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9091/api/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
   caddy:
-    image: caddy:2.7
+    image: caddy-security:latest
+    build:
+      dockerfile_inline: |
+        FROM caddy:2-builder AS builder
+        RUN xcaddy build --with github.com/greenpau/caddy-security@latest --with github.com/caddy-dns/cloudflare
+        
+        FROM caddy:2
+        COPY --from=builder /usr/bin/caddy /usr/bin/caddy
     container_name: caddy
     ports:
       - "0.0.0.0:80:80"
@@ -73,10 +54,14 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./certs:/certs:ro
+      - ./caddy:/config
       - caddy_data:/data
-      - caddy_config:/config
+      - caddy_config:/config_caddy
     environment:
       - BASE_DOMAIN=${BASE_DOMAIN}
+      - CADDY_LDAP_BIND_USERNAME=${CADDY_LDAP_BIND_USERNAME}
+      - CADDY_LDAP_BIND_PASSWORD=${CADDY_LDAP_BIND_PASSWORD}
+      - LLDAP_BASE_DN=${LLDAP_BASE_DN}
     networks:
       - auth_network
       - app_network
@@ -84,7 +69,7 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
     depends_on:
-      - authelia
+      - lldap-init
     cap_drop:
       - ALL
     cap_add:

@@ -10,7 +10,7 @@ done
 sleep 5
 echo "LLDAP is ready, initializing users..."
 
-# Login as admin to get token - with debugging
+# Login as admin to get token
 RESPONSE=$(curl -s -X POST http://lldap:17170/api/auth/simple \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"admin\",\"password\":\"$LLDAP_ADMIN_PASSWORD\"}")
@@ -25,25 +25,25 @@ fi
 
 echo "Successfully authenticated with LLDAP"
 
-# Create authelia user
-echo "Creating authelia service account..."
+# Create Caddy auth user for LDAP binding
+echo "Creating Caddy auth service account..."
 CREATE_RESPONSE=$(curl -s -X POST http://lldap:17170/api/user \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer \$TOKEN" \
   -d "{
-    \"uid\": \"authelia\",
-    \"display_name\": \"Authelia Service Account\",
-    \"email\": \"authelia@$BASE_DOMAIN\",
-    \"password\": \"$LLDAP_AUTH_PASSWORD\"
+    \"uid\": \"caddy-auth\",
+    \"display_name\": \"Caddy Security Service Account\",
+    \"email\": \"caddy-auth@$BASE_DOMAIN\",
+    \"password\": \"$CADDY_LDAP_BIND_PASSWORD\"
   }")
 
-echo "User creation response: $CREATE_RESPONSE"
+echo "User creation response: \$CREATE_RESPONSE"
 
 # Check if we got a success response
 if echo "$CREATE_RESPONSE" | grep -q "user_id"; then
-  echo "Successfully created authelia user"
+  echo "Successfully created Caddy auth user"
 else
-  echo "Failed to create authelia user"
+  echo "Failed to create Caddy auth user"
   # Don't exit with error here, as the user might already exist
 fi
 
