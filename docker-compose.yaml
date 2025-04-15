@@ -20,7 +20,11 @@ services:
     restart: unless-stopped
 
   lldap-init:
-    image: curlimages/curl:latest
+    build:
+      dockerfile_inline: |
+        FROM alpine:latest
+        RUN apk add --no-cache curl jq
+        COPY lldap-init.sh /scripts/lldap-init.sh
     depends_on:
       lldap:
         condition: service_healthy
@@ -67,7 +71,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./certs:/certs:ro
       - caddy_data:/data
       - caddy_config:/config
