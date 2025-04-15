@@ -70,6 +70,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    environment:
+      BASE_DOMAIN: ${BASE_DOMAIN}
     depends_on:
       - authentik-server
 
