@@ -39,22 +39,35 @@ def wait_for_authentik():
     print("Timed out waiting for Authentik")
     return False
 
-# Authenticate and get token
-def get_auth_token():
-    auth_url = f"{AUTHENTIK_URL}/api/v3/core/auth/login/"
-    payload = {
-        "username": AUTHENTIK_ADMIN_USER,
-        "password": AUTHENTIK_ADMIN_PASSWORD
+# Create an API token for the admin user using the OAuth2 client credentials flow
+def get_api_token():
+    token_url = f"{AUTHENTIK_URL}/application/o/token/"
+
+    # OAuth2 client_credentials grant type to get an API token
+    data = {
+        'grant_type': 'client_credentials',
+        'username': AUTHENTIK_ADMIN_USER,
+        'password': AUTHENTIK_ADMIN_PASSWORD,
+        'scope': 'goauthentik.io/api'
     }
 
-    print("Attempting to authenticate...")
-    response = requests.post(auth_url, json=payload)
-    if response.status_code != 200:
-        print(f"Auth failed with status code {response.status_code}")
-        print(f"Response: {response.text}")
-        return None
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+    }
 
-    return response.json().get('token')
+    print("Attempting to obtain API token...")
+    try:
+        response = requests.post(token_url, data=data, headers=headers)
+        if response.status_code != 200:
+            print(f"Token request failed with status code {response.status_code}")
+            print(f"Response: {response.text}")
+            return None
+
+        token_data = response.json()
+        return token_data.get('access_token')
+    except Exception as e:
+        print(f"Error obtaining token: {str(e)}")
+        return None
 
 # Create Forward Auth provider
 def create_proxy_provider(token):
@@ -127,6 +140,82 @@ def save_caddy_config(provider_config):
 
     print(f"Saved configuration to {config_file}")
 
+# Alternative method - Create Service Account and Token through the Users API
+def create_service_account_and_token():
+    print("Creating a service account and token...")
+
+    # Step 1: Login to get a session cookie
+    session = requests.Session()
+    login_url = f"{AUTHENTIK_URL}/api/v3/core/auth/flows/"
+
+    login_data = {
+        "flow": "default-authentication-flow",
+        "component": "ak-stage-identification",
+        "data": {
+            "username": AUTHENTIK_ADMIN_USER,
+            "password": AUTHENTIK_ADMIN_PASSWORD
+        }
+    }
+
+    headers = {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+    }
+
+    try:
+        response = session.post(login_url, json=login_data, headers=headers)
+        if response.status_code != 200:
+            print(f"Login failed: {response.status_code} - {response.text}")
+            return None
+
+        # Step 2: Create a service account user
+        service_account_name = f"init-service-{int(time.time())}"
+        user_url = f"{AUTHENTIK_URL}/api/v3/core/users/"
+
+        user_data = {
+            "username": service_account_name,
+            "name": f"Initial Setup Service Account",
+            "path": "service-accounts",
+            "groups": [],
+            "is_active": True,
+            "attributes": {
+                "service_account": True
+            }
+        }
+
+        user_response = session.post(user_url, json=user_data)
+        if user_response.status_code > 299:
+            print(f"Service account creation failed: {user_response.status_code} - {user_response.text}")
+            return None
+
+        user_id = user_response.json()['pk']
+
+        # Step 3: Create a token for this service account
+        token_url = f"{AUTHENTIK_URL}/api/v3/core/tokens/"
+        token_identifier = generate_secret(12)
+
+        token_data = {
+            "identifier": f"init-token-{token_identifier}",
+            "user": user_id,
+            "intent": "api",
+            "expiring": False,
+            "description": "Initial setup token"
+        }
+
+        token_response = session.post(token_url, json=token_data)
+        if token_response.status_code > 299:
+            print(f"Token creation failed: {token_response.status_code} - {token_response.text}")
+            return None
+
+        # The key value in the response is the token we need
+        token_key = token_response.json().get('key')
+        print(f"Successfully created service account and token")
+        return token_key
+
+    except Exception as e:
+        print(f"Error in service account creation: {str(e)}")
+        return None
+
 # Main function
 def main():
     try:
@@ -137,19 +226,19 @@ def main():
         # Wait a bit more to ensure flows are initialized
         time.sleep(5)
 
-        # Try authentication with retries
-        token = None
-        for i in range(3):  # Try 3 times
-            token = get_auth_token()
-            if token:
-                print("Authentication successful")
-                break
-            print(f"Authentication attempt {i+1} failed, retrying...")
-            time.sleep(5)
+        # Try to get a token through the client_credentials flow first
+        token = get_api_token()
+
+        # If that fails, try creating a service account
+        if not token:
+            print("Failed to get token via client_credentials, trying alternative method...")
+            token = create_service_account_and_token()
 
         if not token:
-            print("Failed to authenticate after retries")
+            print("All authentication methods failed - please check your configuration")
             return
+
+        print("Authentication successful")
 
         # Create Proxy provider
         provider_config = create_proxy_provider(token)
