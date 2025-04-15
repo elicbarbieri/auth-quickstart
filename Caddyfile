@@ -1,11 +1,14 @@
 {
     # Global options
     admin off  # Disable admin API for security
-    auto_https disable_redirects  # Handle redirects in security middleware
+    auto_https disable_redirects  # Let Authelia handle redirects
     servers {
-        # Use the correct syntax for strict_sni_host
-        strict_sni_host
+        strict_sni_host  # Enforce SNI check for improved security
     }
+
+    # Set the directive order
+    order authenticate before respond
+    order authorize before basicauth
 }
 
 # Global security headers
@@ -17,7 +20,7 @@
         X-Frame-Options "SAMEORIGIN"
         Referrer-Policy "strict-origin-when-cross-origin"
         X-XSS-Protection "1; mode=block"
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-ancestors 'self'; form-action 'self';"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-ancestors 'self';"
         Permissions-Policy "geolocation=(), camera=(), microphone=(), interest-cohort=()"
 
         # Remove Server header
@@ -25,110 +28,72 @@
     }
 }
 
-# Authentication configuration
-(auth_config) {
-    security {
-        authentication portal {
-            crypto default token lifetime 3600
-            crypto key sign-verify {env.CADDY_JWT_SECRET}
-
-            enable identity store local
-
-            # LDAP authentication with LLDAP
-            identity store ldap {
-                realm local
-                host lldap:3890  # Using correct LLDAP port
-                insecure_skip_verify
-                bind_dn uid={env.CADDY_LDAP_BIND_USERNAME},ou=people,{env.LLDAP_BASE_DN}
-                bind_password {env.CADDY_LDAP_BIND_PASSWORD}
-
-                search_base_dn {env.LLDAP_BASE_DN}
-                search_filter "(&(uid=%s)(objectClass=person))"
-
-                attributes {
-                    name displayName
-                    surname sn
-                    username uid
-                    member_of memberOf
-                    email mail
-                    primary_group primaryGroup
-                }
-            }
-
-            # OAuth providers will go here in the future
-            # oauth2 openid provider okta {
-            #     realm okta
-            #     driver generic
-            #     client_id YOUR_CLIENT_ID
-            #     client_secret YOUR_CLIENT_SECRET
-            #     server_url https://your-domain.okta.com
-            #     scopes openid email profile
-            # }
-
-            user session {
-                cookie domain {env.BASE_DOMAIN}
-                cookie insecure off
-                cookie http_only on
-                cookie same_site strict
-                idle_timeout 1800
-                lifetime 3600
-                remember_me 172800
-            }
-
-            # Login and registration UI settings
-            ui {
-                theme auto
-                logo url /assets/images/logo.svg
-
-                theme dark {
-                    primary_color "#4f46e5"
-                    background_color "#1f2937"
-                    text_color "#f9fafb"
-                }
-
-                registration off
-                password_recovery off # Enable if you configure email
-            }
-        }
-
-        # Configure login and session verification
-        authentication portal myportal {
-            enable identity store local
-            enable identity store ldap
-            transform user {
-                match origin local ldap
-                action add role authp/user
-            }
-        }
-
-        # Configure authorization with enhanced security
-        authorization policy mypolicy {
-            set auth url /auth
-            crypto key verify {env.CADDY_JWT_SECRET}
-            allow roles authp/user
-            validate bearer header
-            token lifetime 3600
-            token sources cookie
-            inject headers with claims
-        }
-    }
-}
-
 # Authentication portal
 auth.{env.BASE_DOMAIN} {
     import security_headers
-    import auth_config
-
     tls /certs/cert.pem /certs/key.pem {
         protocols tls1.3 tls1.2  # Only use secure TLS versions
     }
 
-    # Handle auth portal routes
-    route {
-        authenticate with myportal
+    # Use authp instead of security directive
+    authp {
+        # JWT configuration
+        crypto default token lifetime 3600
+        crypto key sign-verify {env.CADDY_JWT_SECRET}
+
+        # Enable local identity store
+        enable identity store local
+
+        # LDAP authentication with LLDAP
+        identity store ldap {
+            realm ldap
+            host lldap:3890  # Using correct LLDAP port
+            insecure_skip_verify
+            bind_dn uid={env.CADDY_LDAP_BIND_USERNAME},ou=people,{env.LLDAP_BASE_DN}
+            bind_password {env.CADDY_LDAP_BIND_PASSWORD}
+
+            search_base_dn {env.LLDAP_BASE_DN}
+            search_filter "(&(uid=%s)(objectClass=person))"
+
+            attributes {
+                name displayName
+                surname sn
+                username uid
+                member_of memberOf
+                email mail
+                primary_group primaryGroup
+            }
+        }
+
+        # Session configuration
+        cookie domain {env.BASE_DOMAIN}
+        cookie insecure off
+        cookie http_only on
+        cookie same_site strict
+
+        # Login UI settings
+        ui {
+            theme auto
+            logo url /assets/images/logo.svg
+
+            theme dark {
+                primary_color "#4f46e5"
+                background_color "#1f2937"
+                text_color "#f9fafb"
+            }
+
+            registration off
+            password_recovery off
+        }
+
+        # User transformation for authorization
+        transform user {
+            match origin local ldap
+            action add role authp/user
+        }
     }
 
-    # Add logging for authentication attempts
+    # Add logging
     log {
         output file /var/log/caddy/auth-access.log
         format json
@@ -138,37 +103,41 @@ auth.{env.BASE_DOMAIN} {
 # LLDAP admin interface
 users.{env.BASE_DOMAIN} {
     import security_headers
-    import auth_config
 
     tls /certs/cert.pem /certs/key.pem {
         protocols tls1.3 tls1.2
     }
 
-    # Protected by authentication
-    route {
-        authorize with mypolicy
-        reverse_proxy lldap:17170
-    }
+    # Protected by authorization
+    authorize with mypolicy
+    reverse_proxy lldap:17170
 
-    # Add logging for admin interface access
+    # Add logging
     log {
         output file /var/log/caddy/users-access.log
         format json
     }
 }
 
+# Authorization policy
+(mypolicy) {
+    crypto key verify {env.CADDY_JWT_SECRET}
+    allow roles authp/user
+    validate bearer header
+    validate ip
+    token lifetime 3600
+    inject headers with claims
+}
+
 # Example protected service
 # Uncomment and modify as needed for your applications
 # service.{env.BASE_DOMAIN} {
 #     import security_headers
-#     import auth_config
 #
 #     tls /certs/cert.pem /certs/key.pem {
 #         protocols tls1.3 tls1.2
 #     }
 #
-#     route {
-#         authorize with mypolicy
-#         reverse_proxy host.docker.internal:3000
-#     }
+#     authorize with mypolicy
+#     reverse_proxy host.docker.internal:3000
 # }
