@@ -76,30 +76,74 @@ def create_proxy_provider(token):
     default_group = groups_data['results'][0]['pk']
     print(f"Using group: {groups_data['results'][0]['name']} (ID: {default_group})")
 
-    # Create an application
+    # Check if the application already exists
+    app_slug = "caddy-forward-auth"
     app_url = f"{AUTHENTIK_URL}/api/v3/core/applications/"
-    app_payload = {
-        "name": "Caddy Forward Auth",
-        "slug": "caddy-forward-auth",
-        "provider": None,
-        "meta_launch_url": "",
-        "policy_engine_mode": "all",
-        "group": default_group
-    }
 
-    print("Creating application...")
-    app_response = requests.post(
-        app_url,
-        json=app_payload,
+    # List applications to check if it exists
+    existing_apps_response = requests.get(
+        f"{app_url}?slug={app_slug}",
         headers={"Authorization": f"Bearer {token}"}
     )
-    if app_response.status_code > 299:
-        print(f"App creation failed: {app_response.text}")
+
+    if existing_apps_response.status_code != 200:
+        print(f"Failed to check existing applications: {existing_apps_response.text}")
         return None
 
-    app_id = app_response.json()['pk']
+    existing_apps = existing_apps_response.json()
+    app_id = None
 
-    # Now create the Proxy provider for domain-level authentication
+    # If the application already exists, use it
+    if existing_apps.get('count', 0) > 0:
+        app_id = existing_apps['results'][0]['pk']
+        print(f"Using existing application with slug '{app_slug}' (ID: {app_id})")
+    else:
+        # Create a new application
+        app_payload = {
+            "name": "Caddy Forward Auth",
+            "slug": app_slug,
+            "provider": None,
+            "meta_launch_url": "",
+            "policy_engine_mode": "all",
+            "group": default_group
+        }
+
+        print("Creating application...")
+        app_response = requests.post(
+            app_url,
+            json=app_payload,
+            headers={"Authorization": f"Bearer {token}"}
+        )
+
+        if app_response.status_code > 299:
+            print(f"App creation failed: {app_response.text}")
+            return None
+
+        app_id = app_response.json()['pk']
+        print(f"Created new application with ID: {app_id}")
+
+    # Check if a proxy provider for this application already exists
+    providers_response = requests.get(
+        f"{provider_url}?application={app_id}",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+
+    if providers_response.status_code != 200:
+        print(f"Failed to check existing providers: {providers_response.text}")
+        return None
+
+    providers = providers_response.json()
+
+    # If a provider exists for this application, use it
+    if providers.get('count', 0) > 0:
+        provider_id = providers['results'][0]['pk']
+        print(f"Using existing provider (ID: {provider_id}) for application")
+        return {
+            "provider_id": provider_id,
+            "application_id": app_id
+        }
+
+    # Create a new proxy provider for domain-level authentication
     provider_payload = {
         "name": "Caddy Forward Auth Provider",
         "authorization_flow": "default-provider-authorization-implicit-consent",
@@ -143,8 +187,6 @@ def save_caddy_config(provider_config):
 
     print(f"Saved configuration to {config_file}")
 
-# We no longer need this alternative method since we're using the bootstrap token
-# that's set via environment variables on startup
 
 # Main function
 def main():
