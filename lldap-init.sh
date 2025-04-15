@@ -10,7 +10,7 @@ done
 sleep 5
 echo "LLDAP is ready, initializing users..."
 
-# Login as admin to get token
+# Login as admin to get token - use the correct API endpoint
 RESPONSE=$(curl -s -X POST http://lldap:17170/api/auth/simple \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"admin\",\"password\":\"$LLDAP_ADMIN_PASSWORD\"}")
@@ -20,6 +20,9 @@ TOKEN=$(echo "$RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
 
 if [ -z "$TOKEN" ]; then
   echo "Failed to authenticate with LLDAP"
+  # Debug output
+  echo "Debug: LLDAP_ADMIN_PASSWORD length: ${#LLDAP_ADMIN_PASSWORD}"
+  curl -s -v http://lldap:17170/api/health
   exit 1
 fi
 

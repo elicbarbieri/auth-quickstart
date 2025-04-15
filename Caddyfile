@@ -3,9 +3,8 @@
     admin off  # Disable admin API for security
     auto_https disable_redirects  # Handle redirects in security middleware
     servers {
-        protocol {
-            strict_sni_host  # Enforce SNI check for improved security
-        }
+        # Use the correct syntax for strict_sni_host
+        strict_sni_host
     }
 }
 
@@ -38,7 +37,7 @@
             # LDAP authentication with LLDAP
             identity store ldap {
                 realm local
-                host lldap:389
+                host lldap:3890  # Using correct LLDAP port
                 insecure_skip_verify
                 bind_dn uid={env.CADDY_LDAP_BIND_USERNAME},ou=people,{env.LLDAP_BASE_DN}
                 bind_password {env.CADDY_LDAP_BIND_PASSWORD}
@@ -68,10 +67,12 @@
 
             user session {
                 cookie domain {env.BASE_DOMAIN}
+                cookie insecure off
+                cookie http_only on
+                cookie same_site strict
                 idle_timeout 1800
                 lifetime 3600
                 remember_me 172800
-                same_site strict
             }
 
             # Login and registration UI settings
@@ -100,12 +101,14 @@
             }
         }
 
-        # Configure authorization
+        # Configure authorization with enhanced security
         authorization policy mypolicy {
             set auth url /auth
             crypto key verify {env.CADDY_JWT_SECRET}
             allow roles authp/user
             validate bearer header
+            token lifetime 3600
+            token sources cookie
             inject headers with claims
         }
     }

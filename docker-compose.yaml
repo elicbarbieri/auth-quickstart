@@ -32,6 +32,7 @@ services:
       - LLDAP_ADMIN_PASSWORD=${LLDAP_ADMIN_PASSWORD}
       - LLDAP_AUTH_PASSWORD=${LLDAP_AUTH_PASSWORD}
       - BASE_DOMAIN=${BASE_DOMAIN}
+      - CADDY_LDAP_BIND_PASSWORD=${CADDY_LDAP_BIND_PASSWORD}
     volumes:
       - ./lldap-init.sh:/scripts/lldap-init.sh
     entrypoint: ["/bin/sh", "/scripts/lldap-init.sh"]
@@ -62,6 +63,7 @@ services:
       - CADDY_LDAP_BIND_USERNAME=${CADDY_LDAP_BIND_USERNAME}
       - CADDY_LDAP_BIND_PASSWORD=${CADDY_LDAP_BIND_PASSWORD}
       - LLDAP_BASE_DN=${LLDAP_BASE_DN}
+      - CADDY_JWT_SECRET=${CADDY_JWT_SECRET}
     networks:
       - auth_network
       - app_network
