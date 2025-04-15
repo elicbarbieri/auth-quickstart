@@ -7,7 +7,6 @@ import string
 
 # Configuration from environment
 AUTHENTIK_URL = os.environ.get('AUTHENTIK_URL')
-AUTHENTIK_ADMIN_USER = os.environ.get('AUTHENTIK_ADMIN_USER')
 AUTHENTIK_BOOTSTRAP_TOKEN = os.environ.get('AUTHENTIK_BOOTSTRAP_TOKEN')
 BASE_DOMAIN = os.environ.get('BASE_DOMAIN')
 CADDY_CONFIG_PATH = os.environ.get('CADDY_CONFIG_PATH')

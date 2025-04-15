@@ -88,8 +88,7 @@ services:
         CMD ["python", "init.py"]
     environment:
       AUTHENTIK_URL: http://authentik-server:9000
-      AUTHENTIK_ADMIN_USER: ${AUTHENTIK_ADMIN_USER}
-      AUTHENTIK_ADMIN_PASSWORD: ${AUTHENTIK_ADMIN_PASSWORD}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
       BASE_DOMAIN: ${BASE_DOMAIN}
       CADDY_CONFIG_PATH: /caddy-config
     volumes:
