@@ -26,19 +26,6 @@
     }
 }
 
-# Placeholder for future OAuth providers (Okta, etc.)
-(oauth_providers) {
-    # To be configured for Okta integration
-    # oauth2 openid provider okta {
-    #     realm okta
-    #     driver generic
-    #     client_id YOUR_CLIENT_ID
-    #     client_secret YOUR_CLIENT_SECRET
-    #     server_url https://your-domain.okta.com
-    #     scopes openid email profile
-    # }
-}
-
 # Authentication configuration
 (auth_config) {
     security {
@@ -66,18 +53,25 @@
                     member_of memberOf
                     email mail
                     primary_group primaryGroup
-                    groups memberOf
                 }
             }
 
+            # OAuth providers will go here in the future
+            # oauth2 openid provider okta {
+            #     realm okta
+            #     driver generic
+            #     client_id YOUR_CLIENT_ID
+            #     client_secret YOUR_CLIENT_SECRET
+            #     server_url https://your-domain.okta.com
+            #     scopes openid email profile
+            # }
+
             user session {
                 cookie domain {env.BASE_DOMAIN}
-                cookie insecure off
-                cookie http_only on
-                cookie same_site strict
                 idle_timeout 1800
                 lifetime 3600
                 remember_me 172800
+                same_site strict
             }
 
             # Login and registration UI settings
@@ -100,22 +94,18 @@
         authentication portal myportal {
             enable identity store local
             enable identity store ldap
-            import (oauth_providers)
             transform user {
                 match origin local ldap
                 action add role authp/user
             }
         }
 
-        # Configure authorization with enhanced security
+        # Configure authorization
         authorization policy mypolicy {
             set auth url /auth
             crypto key verify {env.CADDY_JWT_SECRET}
             allow roles authp/user
             validate bearer header
-            validate ip
-            token lifetime 3600
-            token sources cookie
             inject headers with claims
         }
     }
