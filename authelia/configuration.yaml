@@ -21,6 +21,9 @@ default_redirection_url: https://auth.${BASE_DOMAIN}
 
 # JWT Secret
 jwt_secret: ${AUTHELIA_JWT_SECRET}
+identity_validation:
+  reset_password:
+    jwt_secret: ${AUTHELIA_JWT_SECRET}
 
 # TOTP Configuration
 totp:
@@ -44,6 +47,11 @@ session:
   expiration: 1h
   inactivity: 5m
   remember_me_duration: 1M
+  cookies:
+    authentication_cookie:
+      domain: ${BASE_DOMAIN}
+      authelia_url: https://auth.${BASE_DOMAIN}
+      default_redirection_url: https://auth.${BASE_DOMAIN}
   redis:
     host: redis
     port: 6379
@@ -56,7 +64,7 @@ storage:
 
 # Access Control Configuration
 access_control:
-  default_policy: deny
+  default_policy: one_factor
   rules:
     # Public endpoints
     - domain: auth.${BASE_DOMAIN}
@@ -102,6 +110,12 @@ notifier:
   disable_startup_check: true
   filesystem:
     filename: /config/notification.txt
+  # For production, uncomment and configure SMTP:
+  # smtp:
+  #   address: 'smtp.example.com:587'
+  #   username: 'authelia@example.com'
+  #   password: ${SMTP_PASSWORD}
+  #   sender: 'Authelia <authelia@example.com>'
 
 # OpenID Connect Configuration
 identity_providers:
@@ -110,7 +124,17 @@ identity_providers:
     hmac_secret: ${AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET}
 
     # RSA Private Key for token signing
-    issuer_private_key_file: /config/secrets/oidc_private_key.pem
+    issuer_private_key: |
+      -----BEGIN RSA PRIVATE KEY-----
+      # Your RSA private key content here
+      # Either place the key directly here or use the file option below
+      -----END RSA PRIVATE KEY-----
+    # OR use this for file-based key:
+    # issuer_private_key_file: /config/secrets/oidc_private_key.pem
+
+    # JWKS configuration
+    jwks:
+      key_id: authelia-key-1
 
     # Token lifespans
     access_token_lifespan: 1h

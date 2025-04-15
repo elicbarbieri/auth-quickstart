@@ -7,9 +7,6 @@
             strict_sni_host  # Enforce SNI check for improved security
         }
     }
-
-    # Use environment variables
-    env BASE_DOMAIN
 }
 
 # Global security headers
@@ -30,7 +27,7 @@
 }
 
 # Authentication portal
-auth.{$BASE_DOMAIN} {
+auth.{env.BASE_DOMAIN} {
     import security_headers
     tls /certs/cert.pem /certs/key.pem {
         protocols tls1.3 tls1.2  # Only use secure TLS versions
@@ -39,14 +36,14 @@ auth.{$BASE_DOMAIN} {
 }
 
 # LLDAP admin interface
-users.{$BASE_DOMAIN} {
+users.{env.BASE_DOMAIN} {
     import security_headers
     tls /certs/cert.pem /certs/key.pem {
         protocols tls1.3 tls1.2
     }
     # Use forward_auth for authentication
     forward_auth authelia:9091 {
-        uri /api/verify?rd=https://auth.{$BASE_DOMAIN}
+        uri /api/verify?rd=https://auth.{env.BASE_DOMAIN}
         copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
     }
     reverse_proxy lldap:17170
@@ -54,13 +51,13 @@ users.{$BASE_DOMAIN} {
 
 # Example protected service
 # Uncomment and modify as needed for your applications
-# service.{$BASE_DOMAIN} {
+# service.{env.BASE_DOMAIN} {
 #     import security_headers
 #     tls /certs/cert.pem /certs/key.pem {
 #         protocols tls1.3 tls1.2
 #     }
 #     forward_auth authelia:9091 {
-#         uri /api/verify?rd=https://auth.{$BASE_DOMAIN}
+#         uri /api/verify?rd=https://auth.{env.BASE_DOMAIN}
 #         copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
 #     }
 #     reverse_proxy host.docker.internal:3000
