@@ -1,9 +1,9 @@
 # Secure Auth Quickstart
 
 A secure and very fast way to add authentication to any Docker application stack. This repo provides a complete,
-staging-ready authentication system using LLDAP and Caddy Security.
+staging-ready authentication system using Authentik and Caddy.
 
-If you want to go crazy and run this in production....  go for it you crazy bastard.
+If you want to go crazy and run this in production.... go for it you crazy bastard.
 
 That said, this is a very simple and easy to use authentication system perfect for testing an app with its
 first thousand users, or really quickly getting an internal app up and running securely.
@@ -14,22 +14,23 @@ This is a list of things you MUST do in order to securely use this system:
 - SSH keypair with strong passphrase, or username + good password
 - No other users able to access the server & no weird shit installed
 - Don't store cryptographic information in stupid places. SSL certificates belong on the server, not your notes app
-- Don't delete the .env file, the JWT secrets and auth keys are annoying to re-generate
+- Don't delete the .env file, the secrets are annoying to re-generate
 - Turn on a firewall
 
 ## Features
 
-- **Complete Authentication System**: User management, SSO, and future OIDC support
+- **Complete Authentication System**: User management, SSO, and full OIDC support
 - **Simple Setup**: Takes 5 minutes to deploy
 - **Secure by Default**: Modern security standards and best practices
 - **Easy Integration**: Works with any HTTP services
-- **Zero Click-Ops**: No clicking through auth dashboards to get it running
-- **Lightweight**: Uses Caddy's built-in security module instead of a separate auth service
+- **Zero Click-Ops**: Automated setup script for configuration
+- **Flexible Authentication**: Supports multiple authentication methods and protocols
+- **Future-Proof**: Built-in support for adding Okta or other identity providers later
 
 ## Prerequisites
 - Application stack based on docker or docker-compose
 - Wildcard DNS record, i.e., `*.example.com` → your server IP
-- TLS Certificate for `*.example.com` (create using Let's Encrypt & DNS challenge)
+- TLS Certificate for `*.example.com` (create using Let's Encrypt & DNS challenge, or let Caddy handle it automatically)
 
 ## Creating TLS Certificates with Let's Encrypt
 
@@ -51,7 +52,7 @@ cd auth-quickstart
 # Run the setup script
 ./setup.sh
 
-# Copy your TLS certificates
+# Copy your TLS certificates (optional if using Caddy's automatic HTTPS)
 cp /etc/letsencrypt/live/example.com/fullchain.pem ./certs/cert.pem
 cp /etc/letsencrypt/live/example.com/privkey.pem ./certs/key.pem
 
@@ -69,8 +70,8 @@ sudo ufw enable
 
 ## Accessing Your Services
 
-- **Authentication Portal**: `https://auth.example.com`
-- **LLDAP Admin**: `https://users.example.com`
+- **Authentik Portal**: `https://auth.example.com`
+- **Initial Setup**: `https://auth.example.com/if/flow/initial-setup/`
 
 ## Adding Your Applications
 
@@ -93,59 +94,45 @@ Example Caddyfile entry:
 
 ```caddy
 app.example.com {
-    import security_headers
-    import auth_config
+    tls /certs/cert.pem /certs/key.pem
     
-    tls /certs/cert.pem /certs/key.pem {
-        protocols tls1.3 tls1.2
+    forward_auth authentik-server:9000/outpost.goauthentik.io/auth/caddy {
+        uri /outpost.goauthentik.io/auth/caddy
+        copy_headers X-authentik-username X-authentik-groups X-authentik-email
     }
     
-    route {
-        authorize with mypolicy
-        reverse_proxy host.docker.internal:8080
-    }
+    reverse_proxy host.docker.internal:8080
 }
 ```
 
 ## Security Features
 
-- **Authentication** via Caddy Security with LDAP backend
+- **Authentication** via Authentik with forward auth to Caddy
 - **Single Sign-On** for all your applications
-- **Security headers** on all protected sites
-- **LDAP integration** for user management
-- **Future Okta integration** support
+- **Multi-factor Authentication** support
+- **Flexible User Management** with built-in admin interface
+- **Comprehensive API** for automation
+- **Multiple protocols** including OIDC, SAML, and more
 
 ## Integrating with Okta (Future Setup)
 
 To integrate with Okta in the future, you'll need to:
 
 1. Register an OIDC application in Okta
-2. Configure the Okta provider in the Caddyfile:
+2. In the Authentik admin interface:
+    - Go to "Sources" and add a new OAuth source
+    - Configure it with your Okta client ID, client secret, and endpoints
+    - Set up the proper OAuth scopes (typically openid, email, profile)
+    - Create an authentication flow that uses the Okta source
 
-```caddy
-# Add to the auth_config snippet in your Caddyfile
-security {
-    oauth2 openid provider okta {
-        realm okta
-        driver generic
-        client_id YOUR_CLIENT_ID
-        client_secret YOUR_CLIENT_SECRET
-        server_url https://your-domain.okta.com
-        scopes openid email profile
-    }
-
-    authentication portal myportal {
-        enable oauth provider okta
-        # Existing configuration...
-    }
-}
-```
+The authentication will now be handled through Okta while maintaining your existing setup.
 
 ## Troubleshooting
 
 If you encounter any issues:
 
-- Check Docker container logs: `docker logs caddy`
+- Check Docker container logs: `docker logs authentik-server`
+- Check Caddy logs: `docker logs caddy`
 - Verify network connectivity between containers
 - Confirm DNS resolution works correctly
 - Ensure TLS certificates are valid

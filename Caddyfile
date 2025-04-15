@@ -1,142 +1,22 @@
 {
     # Global options
-    admin off  # Disable admin API for security
-    auto_https disable_redirects  # Handle redirects in security middleware
-    servers {
-        strict_sni_host  # Enforce SNI check for improved security
-    }
-
-    # Set the directive order
-    order authenticate before respond
-    order authorize before basicauth
+    email admin@example.com
 }
 
-# Global security headers
-(security_headers) {
-    header {
-        # Security headers
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "SAMEORIGIN"
-        Referrer-Policy "strict-origin-when-cross-origin"
-        X-XSS-Protection "1; mode=block"
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-ancestors 'self'; form-action 'self';"
-        Permissions-Policy "geolocation=(), camera=(), microphone=(), interest-cohort=()"
-
-        # Remove Server header
-        -Server
-    }
+# Authentik Service
+auth.{$BASE_DOMAIN} {
+    reverse_proxy authentik-server:9000
 }
 
-# Define the authorization policy
-(mypolicy) {
-    crypto key verify {env.CADDY_JWT_SECRET}
-    allow roles authp/user
-    validate bearer header
-    token lifetime 3600
-    inject headers with claims
+# Protected Service Example
+app.{$BASE_DOMAIN} {
+    forward_auth authentik-server:9000/outpost.goauthentik.io/auth/caddy {
+        uri /outpost.goauthentik.io/auth/caddy
+        copy_headers X-authentik-username X-authentik-groups X-authentik-email X-authentik-name
+    }
+
+    # Your application service
+    reverse_proxy app-service:8080
 }
 
-# Authentication portal
-auth.{env.BASE_DOMAIN} {
-    import security_headers
-    tls /certs/cert.pem /certs/key.pem {
-        protocols tls1.3 tls1.2  # Only use secure TLS versions
-    }
-
-    # Use authp instead of security directive
-    authp {
-        # JWT configuration
-        crypto default token lifetime 3600
-        crypto key sign-verify {env.CADDY_JWT_SECRET}
-
-        # Enable local identity store
-        enable identity store local
-
-        # LDAP authentication with LLDAP
-        identity store ldap {
-            realm ldap
-            host lldap:3890  # Using correct LLDAP port
-            insecure_skip_verify
-            bind_dn uid={env.CADDY_LDAP_BIND_USERNAME},ou=people,{env.LLDAP_BASE_DN}
-            bind_password {env.CADDY_LDAP_BIND_PASSWORD}
-
-            search_base_dn {env.LLDAP_BASE_DN}
-            search_filter "(&(uid=%s)(objectClass=person))"
-
-            attributes {
-                name displayName
-                surname sn
-                username uid
-                member_of memberOf
-                email mail
-                primary_group primaryGroup
-            }
-        }
-
-        # Session configuration
-        cookie domain {env.BASE_DOMAIN}
-        cookie insecure off
-        cookie http_only on
-        cookie same_site strict
-
-        # Login UI settings
-        ui {
-            theme auto
-            logo url /assets/images/logo.svg
-
-            theme dark {
-                primary_color "#4f46e5"
-                background_color "#1f2937"
-                text_color "#f9fafb"
-            }
-
-            registration off
-            password_recovery off
-        }
-
-        # User transformation for authorization
-        transform user {
-            match origin local ldap
-            action add role authp/user
-        }
-    }
-
-    # Add logging
-    log {
-        output file /var/log/caddy/auth-access.log
-        format json
-    }
-}
-
-# LLDAP admin interface
-users.{env.BASE_DOMAIN} {
-    import security_headers
-
-    tls /certs/cert.pem /certs/key.pem {
-        protocols tls1.3 tls1.2
-    }
-
-    # Protected by authorization
-    authorize with mypolicy
-    reverse_proxy lldap:17170
-
-    # Add logging
-    log {
-        output file /var/log/caddy/users-access.log
-        format json
-    }
-}
-
-# Example protected service
-# Uncomment and modify as needed for your applications
-# service.{env.BASE_DOMAIN} {
-#     import security_headers
-#
-#     tls /certs/cert.pem /certs/key.pem {
-#         protocols tls1.3 tls1.2
-#     }
-#
-#     authorize with mypolicy
-#     reverse_proxy host.docker.internal:3000
-# }
+# Additional services can follow the same pattern

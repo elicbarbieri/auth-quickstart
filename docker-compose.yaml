@@ -1,94 +1,102 @@
+version: '3.8'
+
 services:
-  lldap:
-    image: lldap/lldap:stable
-    container_name: lldap
-    volumes:
-      - lldap_data:/data
-    environment:
-      - TZ=UTC
-      - LLDAP_JWT_SECRET=${LLDAP_JWT_SECRET}
-      - LLDAP_ADMIN_PASSWORD=${LLDAP_ADMIN_PASSWORD}
-      - LLDAP_LDAP_BASE_DN=${LLDAP_BASE_DN}
-    networks:
-      - auth_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:17170/api/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
+  # PostgreSQL for Authentik
+  postgresql:
+    image: postgres:14-alpine
     restart: unless-stopped
-
-  lldap-init:
-    build:
-      dockerfile_inline: |
-        FROM alpine:latest
-        RUN apk add --no-cache curl jq
-        COPY lldap-init.sh /scripts/lldap-init.sh
-    depends_on:
-      lldap:
-        condition: service_healthy
-    environment:
-      - LLDAP_ADMIN_PASSWORD=${LLDAP_ADMIN_PASSWORD}
-      - LLDAP_AUTH_PASSWORD=${LLDAP_AUTH_PASSWORD}
-      - BASE_DOMAIN=${BASE_DOMAIN}
-      - CADDY_LDAP_BIND_PASSWORD=${CADDY_LDAP_BIND_PASSWORD}
     volumes:
-      - ./lldap-init.sh:/scripts/lldap-init.sh
-    entrypoint: ["/bin/sh", "/scripts/lldap-init.sh"]
-    networks:
-      - auth_network
+      - authentik-db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASS}
+      POSTGRES_USER: ${PG_USER:-authentik}
+      POSTGRES_DB: ${PG_DB:-authentik}
 
-  caddy:
-    image: caddy-security:latest
-    build:
-      dockerfile_inline: |
-        FROM caddy:2-builder AS builder
-        RUN xcaddy build --with github.com/greenpau/caddy-security@v1.1.18
-        
-        FROM caddy:2
-        COPY --from=builder /usr/bin/caddy /usr/bin/caddy
-    container_name: caddy
+  # Redis for Authentik
+  redis:
+    image: redis:alpine
+    command: --save 60 1
+    restart: unless-stopped
+    volumes:
+      - authentik-redis:/data
+
+  # Authentik Server
+  authentik-server:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2025.2.4}
+    restart: unless-stopped
+    command: server
+    volumes:
+      - authentik-media:/media
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
     ports:
-      - "0.0.0.0:80:80"
-      - "0.0.0.0:443:443"
+      - "9000:9000"
+    depends_on:
+      - postgresql
+      - redis
+
+  # Authentik Worker
+  authentik-worker:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2025.2.4}
+    restart: unless-stopped
+    command: worker
+    volumes:
+      - authentik-media:/media
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+    depends_on:
+      - postgresql
+      - redis
+      - authentik-server
+
+  # Caddy as reverse proxy
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./certs:/certs:ro
-      - ./caddy:/config
       - caddy_data:/data
-      - caddy_config:/config_caddy
-    environment:
-      - BASE_DOMAIN=${BASE_DOMAIN}
-      - CADDY_LDAP_BIND_USERNAME=${CADDY_LDAP_BIND_USERNAME}
-      - CADDY_LDAP_BIND_PASSWORD=${CADDY_LDAP_BIND_PASSWORD}
-      - LLDAP_BASE_DN=${LLDAP_BASE_DN}
-      - CADDY_JWT_SECRET=${CADDY_JWT_SECRET}
-    networks:
-      - auth_network
-      - app_network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
+      - caddy_config:/config
     depends_on:
-      - lldap-init
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_BIND_SERVICE
-      - DAC_OVERRIDE
+      - authentik-server
 
-networks:
-  auth_network:
-    driver: bridge
-    internal: true  # This network is not accessible from outside
-  app_network:
-    driver: bridge   # Allows accessing the docker host from the container
+  # Init script with inline Dockerfile to automate OAuth client creation
+  init-script:
+    build:
+      dockerfile_inline: |
+        FROM python:3.11-slim
+        RUN pip install --no-cache-dir requests
+        COPY init.py /app/init.py
+        WORKDIR /app
+        CMD ["python", "init.py"]
+    environment:
+      AUTHENTIK_URL: http://authentik-server:9000
+      AUTHENTIK_ADMIN_USER: ${AUTHENTIK_ADMIN_USER}
+      AUTHENTIK_ADMIN_PASSWORD: ${AUTHENTIK_ADMIN_PASSWORD}
+      BASE_DOMAIN: ${BASE_DOMAIN}
+      CADDY_CONFIG_PATH: /caddy-config
+    volumes:
+      - ./init.py:/app/init.py
+      - ./caddy_config:/caddy-config
+    depends_on:
+      - authentik-server
 
 volumes:
-  lldap_data:
-    driver: local
+  authentik-db:
+  authentik-redis:
+  authentik-media:
   caddy_data:
-    driver: local
   caddy_config:
-    driver: local
